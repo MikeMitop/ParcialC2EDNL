@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Proyectos - Grafo de Tareas</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        h1 {
+            margin-bottom: 15px;
+            font-size: 24px;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            background-color: #fff;
+            color: #333;
+            transition: all 0.3s ease;
+        }
+        .btn:hover {
+            background-color: #e0e0e0;
+        }
+        .btn.active {
+            background-color: #3498db;
+            color: white;
+        }
+        .btn.delete {
+            background-color: #e74c3c;
+            color: white;
+        }
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            background-color: white;
+            display: flex;
+        }
+        #canvas {
+            flex: 1;
+            cursor: crosshair;
+            border: 1px solid #ccc;
+        }
+        .sidebar {
+            width: 350px;
+            background-color: #ecf0f1;
+            border-left: 1px solid #ccc;
+            padding: 15px;
+            overflow-y: auto;
+        }
+        .info-panel {
+            background-color: white;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        .task-list {
+            background-color: white;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .task-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+        .task-item:hover {
+            background-color: #f8f9fa;
+        }
+        .task-item.selected {
+            background-color: #3498db;
+            color: white;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            width: 500px;
+            max-width: 90%;
+            text-align: left;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        .form-group textarea {
+            height: 80px;
+            resize: vertical;
+        }
+        .form-row {
+            display: flex;
+            gap: 15px;
+        }
+        .form-row .form-group {
+            flex: 1;
+        }
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .instructions {
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        .prerequisites-list, .postrequisites-list {
+            max-height: 120px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            padding: 5px;
+        }
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            padding: 5px;
+        }
+        .checkbox-item input {
+            margin-right: 10px;
+        }
+        .task-details {
+            font-size: 12px;
+            color: #666;
+            margin-top: 3px;
+        }
+        .critical-path {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        .summary-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 12px;
+        }
+        .stat-box {
+            text-align: center;
+            padding: 5px;
+            background-color: #f8f9fa;
+            border-radius: 3px;
+            flex: 1;
+            margin: 0 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Gestión de Proyectos - Grafo de Tareas</h1>
+        <div class="controls">
+            <button class="btn active" id="addTaskBtn">➕ Agregar Tarea</button>
+            <button class="btn" id="addDependencyBtn">🔗 Agregar Dependencia</button>
+            <button class="btn" id="editBtn">✏️ Editar</button>
+            <button class="btn delete" id="deleteBtn">🗑️ Eliminar</button>
+            <button class="btn" id="clearBtn">🔄 Limpiar Todo</button>
+            <button class="btn" id="criticalPathBtn">🎯 Ruta Crítica</button>
+            <button class="btn" id="adjMatrixBtn">📐 Matriz Adyacencia</button>
+            <button class="btn" id="incidenceMatrixBtn">📏 Matriz Incidencia</button>
+            <button class="btn" id="dijkstraBtn">🔎 Ruta Mínima (Dijkstra)</button>
+            <button class="btn" id="saveBtn">💾 Guardar</button>
+            <button class="btn" id="loadBtn"></button>
+        </div>
+        <div class="instructions">
+            <strong>Modo Agregar Tarea:</strong> Haz clic en cualquier lugar del canvas para crear una nueva tarea
+        </div>
+    </div>
+    <!-- Modal para mostrar matrices y resultados -->
+    <div id="resultModal" class="modal">
+        <div class="modal-content">
+            <h3 id="resultModalTitle">Resultados</h3>
+            <div id="resultContent" style="max-height:400px; overflow:auto; font-size:13px;"></div>
+            <div class="modal-buttons">
+                <button class="btn" id="closeResultBtn">Cerrar</button>
+            </div>
+        </div>
+    </div>
+    <!-- Input file hidden for loading -->
+    <input type="file" id="fileInput" accept="application/json" style="display:none" />
+    <div class="canvas-container">
+        <canvas id="canvas"></canvas>
+        <div class="sidebar">
+            <div class="info-panel">
+                <h3>📈 Resumen del Proyecto</h3>
+                <div class="summary-stats">
+                    <div class="stat-box">
+                        <strong id="taskCount">0</strong>
+                        <div>Tareas</div>
+                    </div>
+                    <div class="stat-box">
+                        <strong id="dependencyCount">0</strong>
+                        <div>Dependencias</div>
+                    </div>
+                    <div class="stat-box">
+                        <strong id="totalDuration">0</strong>
+                        <div>Duración Total</div>
+                    </div>
+                    <div class="stat-box">
+                        <strong id="totalCost">$0</strong>
+                        <div>Costo Total</div>
+                    </div>
+                </div>
+                <p><strong>Modo:</strong> <span id="currentMode">Agregar Tarea</span></p>
+            </div>
+            <div class="info-panel">
+                <h3>📋 Lista de Tareas</h3>
+                <div class="task-list" id="taskList">
+                    <div style="padding: 20px; text-align: center; color: #666;">
+                        No hay tareas creadas
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="taskModal" class="modal">
+        <div class="modal-content">
+            <h3 id="taskModalTitle">Crear Nueva Tarea</h3>
+            <div class="form-group">
+                <label for="taskName">Nombre de la Tarea *</label>
+                <input type="text" id="taskName" placeholder="Ej: Análisis de Requerimientos">
+            </div>
+            <div class="form-group">
+                <label for="taskDescription">Descripción</label>
+                <textarea id="taskDescription" placeholder="Descripción detallada de la tarea..."></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="taskDuration">Duración (días) *</label>
+                    <input type="number" id="taskDuration" placeholder="5" min="1" step="0.5">
+                </div>
+                <div class="form-group">
+                    <label for="taskCost">Costo ($)</label>
+                    <input type="number" id="taskCost" placeholder="1000" min="0" step="0.01">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="taskColor">Color</label>
+                    <input type="color" id="taskColor" value="#3498db">
+                </div>
+                <div class="form-group">
+                    <label for="taskPriority">Prioridad</label>
+                    <select id="taskPriority">
+                        <option value="low">Baja</option>
+                        <option value="medium" selected>Media</option>
+                        <option value="high">Alta</option>
+                        <option value="critical">Crítica</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Prerrequisitos (Tareas que deben completarse antes)</label>
+                    <div id="prerequisitesList" class="prerequisites-list">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Postrequisitos (Tareas que dependen de esta)</label>
+                    <div id="postrequisitesList" class="postrequisites-list">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="saveTaskBtn">💾 Guardar</button>
+                <button class="btn" id="cancelTaskBtn">❌ Cancelar</button>
+            </div>
+        </div>
+    </div>
+    <div id="dependencyModal" class="modal">
+        <div class="modal-content">
+            <h3 id="dependencyModalTitle">Crear Dependencia</h3>
+            <div class="form-group">
+                <label for="dependencyName">Nombre de la Dependencia</label>
+                <input type="text" id="dependencyName" placeholder="Ej: requiere, precede, bloquea">
+            </div>
+            <div class="form-group">
+                <label for="dependencyType">Tipo de Dependencia</label>
+                <select id="dependencyType">
+                    <option value="FS">Fin-a-Inicio (FS)</option>
+                    <option value="SS">Inicio-a-Inicio (SS)</option>
+                    <option value="FF">Fin-a-Fin (FF)</option>
+                    <option value="SF">Inicio-a-Fin (SF)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="dependencyLag">Retraso (días)</label>
+                <input type="number" id="dependencyLag" placeholder="0" step="0.5">
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="saveDependencyBtn">💾 Guardar</button>
+                <button class="btn" id="cancelDependencyBtn">❌ Cancelar</button>
+            </div>
+        </div>
+    </div>
+    <script src="grafos.js"></script>
+</body>
+</html>
