@@ -492,7 +492,8 @@ class ProjectGraphEditor {
                     to: toTaskId,
                     name: `${fromTask.name} → ${this.selectedTask.name}`,
                     type: "FS", // Por defecto, Fin-a-Inicio.
-                    lag: 0
+                    lag: 0,
+                    weight: 1 // Default weight
                 };
                 this.dependencies.push(dependency);
             } else if (!checkbox.checked && existingDep) {
@@ -517,7 +518,8 @@ class ProjectGraphEditor {
                     to: toTaskId,
                     name: `${this.selectedTask.name} → ${toTask.name}`,
                     type: "FS", // Por defecto, Fin-a-Inicio.
-                    lag: 0
+                    lag: 0,
+                    weight: 1 // Default weight
                 };
                 this.dependencies.push(dependency);
             } else if (!checkbox.checked && existingDep) {
@@ -596,6 +598,8 @@ class ProjectGraphEditor {
         if (!isNaN(lagRaw) && lagRaw !== "") {
             lag = parseFloat(lagRaw);
         }
+        // Default weight is 1 if lag is 0 or empty, otherwise use lag as weight
+        const weight = (lag && lag !== 0) ? Math.abs(lag) : 1;
 
         // Validación del nombre.
         if (!name) {
@@ -608,6 +612,7 @@ class ProjectGraphEditor {
             this.selectedDependency.name = name;
             this.selectedDependency.type = type;
             this.selectedDependency.lag = lag;
+            this.selectedDependency.weight = weight;
         } else if (this.pendingDependencyData) {
             // Si no hay dependencia seleccionada y hay datos pendientes, se crea una nueva.
             // Verifica si ya existe una dependencia entre las tareas seleccionadas.
@@ -623,7 +628,8 @@ class ProjectGraphEditor {
                     to: this.pendingDependencyData.to.id,
                     name: name,
                     type: type,
-                    lag: lag
+                    lag: lag,
+                    weight: weight
                 };
                 this.dependencies.push(dependency);
             } else {
@@ -708,8 +714,8 @@ class ProjectGraphEditor {
         this.criticalPathTasks = this.tasks.filter(t => t.duration === maxDuration).map(t => t.id); // Filtra las tareas con esa duración.
     }
 
-    // Build adjacency matrix (tasks x tasks). Weight by duration by default (or 1 if unweighted)
-    buildAdjacencyMatrix(weight = 'duration') {
+    // Build adjacency matrix (tasks x tasks) using edge weights from dependencies
+    buildAdjacencyMatrix() {
         const n = this.tasks.length;
         const idx = {};
         this.tasks.forEach((t, i) => idx[t.id] = i);
@@ -718,13 +724,14 @@ class ProjectGraphEditor {
             const i = idx[dep.from];
             const j = idx[dep.to];
             if (i === undefined || j === undefined) return;
-            const w = weight === 'duration' ? (this.tasks[j].duration || 1) : (dep.weight || 1);
+            // Use dependency weight (based on lag, default 1)
+            const w = dep.weight || 1;
             mat[i][j] = w;
         });
         return { mat, indexMap: idx };
     }
 
-    // Build incidence matrix (tasks x dependencies). +1 for target, -1 for source
+    // Build incidence matrix (tasks x dependencies) with weights
     buildIncidenceMatrix() {
         const n = this.tasks.length;
         const m = this.dependencies.length;
@@ -734,8 +741,10 @@ class ProjectGraphEditor {
         this.dependencies.forEach((dep, j) => {
             const iFrom = idx[dep.from];
             const iTo = idx[dep.to];
-            if (iFrom !== undefined) mat[iFrom][j] = -1;
-            if (iTo !== undefined) mat[iTo][j] = 1;
+            const weight = dep.weight || 1;
+            // Use weight: -weight for source, +weight for target
+            if (iFrom !== undefined) mat[iFrom][j] = -weight;
+            if (iTo !== undefined) mat[iTo][j] = weight;
         });
         return { mat, indexMap: idx };
     }
@@ -790,14 +799,15 @@ class ProjectGraphEditor {
         });
     }
 
-    // Run Dijkstra using edge weights = destination.duration (or 1). Highlights path and shows text
+    // Run Dijkstra using edge weights from dependencies
     runDijkstra(sourceId, targetId) {
-        // Build adjacency list with weights
+        // Build adjacency list with weights from dependencies
         const nodes = this.tasks.map(t=>t.id);
         const adj = {};
         this.tasks.forEach(t=> adj[t.id]=[]);
         this.dependencies.forEach(dep=>{
-            const w = this.tasks.find(t=>t.id===dep.to)?.duration || 1;
+            // Use dependency weight instead of task duration
+            const w = dep.weight || 1;
             adj[dep.from].push({to: dep.to, weight: w, depId: dep.id});
         });
 
@@ -822,7 +832,7 @@ class ProjectGraphEditor {
         }
 
         if (dist[targetId]===Infinity) {
-            this.showResultModal('Ruta Mínima - Resultado', `<div>No existe ruta desde ${sourceId} hasta ${targetId}</div>`);
+            this.showResultModal('Ruta Mínima - Resultado', `<div>No existe ruta desde ${this.tasks.find(t=>t.id===sourceId)?.name} hasta ${this.tasks.find(t=>t.id===targetId)?.name}</div>`);
             return;
         }
 
@@ -842,7 +852,7 @@ class ProjectGraphEditor {
 
         // Show textual result
         const names = pathNodes.map(id=>this.tasks.find(t=>t.id===id)?.name || id);
-        const html = `<div>Distancia total (suma de duraciones): <strong>${dist[targetId]}</strong></div>` +
+        const html = `<div>Distancia total (suma de pesos): <strong>${dist[targetId]}</strong></div>` +
             `<div>Ruta: ${names.join(' → ')}</div>`;
         this.showResultModal('Ruta Mínima - Resultado', html);
     }
@@ -886,14 +896,19 @@ class ProjectGraphEditor {
                         color: t.color || '#3498db',
                         priority: t.priority || 'medium'
                     }));
-                    this.dependencies = obj.dependencies.map(d=>({
-                        id: d.id,
-                        from: d.from,
-                        to: d.to,
-                        name: d.name || '',
-                        type: d.type || 'FS',
-                        lag: d.lag || 0
-                    }));
+                    this.dependencies = obj.dependencies.map(d=>{
+                        const lag = d.lag || 0;
+                        const weight = d.weight || ((lag && lag !== 0) ? Math.abs(lag) : 1);
+                        return {
+                            id: d.id,
+                            from: d.from,
+                            to: d.to,
+                            name: d.name || '',
+                            type: d.type || 'FS',
+                            lag: lag,
+                            weight: weight
+                        };
+                    });
                     // Reset counters
                     this.taskIdCounter = this.tasks.reduce((m,t)=>Math.max(m,t.id), 0) + 1;
                     this.dependencyIdCounter = this.dependencies.reduce((m,d)=>Math.max(m,d.id), 0) + 1;
